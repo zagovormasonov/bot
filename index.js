@@ -10,11 +10,13 @@ const bot = new Telegraf(BOT_TOKEN);
 // messageMap: admin_side_msg_id -> { user_id, user_side_msg_id }
 const messageMap = new Map();
 
-// msgCounter: user_id -> integer (count messages FROM user)
-const msgCounter = new Map();
+// firstMessageDate: user_id -> timestamp (Date.now())
+const firstMessageDate = new Map();
 
 // premiumUsers: user_id -> boolean
 const premiumUsers = new Map();
+
+const TRIAL_DURATION = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 
 bot.start((ctx) => {
     ctx.reply('Привет! Напиши мне сообщение, и я передам его администратору.');
@@ -25,7 +27,7 @@ async function sendInvoice(ctx, targetUserId) {
     try {
         await ctx.telegram.sendInvoice(targetUserId, {
             title: '⚡️ ПРИОРИТЕТНЫЙ ЧАТ',
-            description: 'Вы достигли лимита в 10 сообщений. Активируйте ПРИОРИТЕТНЫЙ РЕЖИМ за 100 звезд, чтобы продолжить общение и получить статус VIP!',
+            description: 'Ваш пробный период (3 дня) закончился. Активируйте ПРИОРИТЕТНЫЙ РЕЖИМ за 100 звезд, чтобы продолжить общение!',
             payload: `priority_${targetUserId}`,
             currency: 'XTR',
             prices: [{ label: '100 Stars', amount: 100 }],
@@ -68,23 +70,21 @@ bot.on('message', async (ctx) => {
         try {
             const isPremium = premiumUsers.get(userId);
 
-            // --- LIMIT LOGIC ---
+            // --- LIMIT LOGIC (3 DAYS TRIAL) ---
             if (!isPremium) {
-                let currentCount = (msgCounter.get(userId) || 0) + 1;
-
-                if (currentCount > 10) {
-                    console.log(`User ${userId} over limit (${currentCount}). Blocking message.`);
-                    ctx.reply('❌ Лимит бесплатных сообщений исчерпан.');
-                    await sendInvoice(ctx, userId);
-                    return; // STOP HERE - Message is not forwarded to admin
+                if (!firstMessageDate.has(userId)) {
+                    firstMessageDate.set(userId, Date.now());
+                    console.log(`User ${userId} started trial.`);
                 }
 
-                msgCounter.set(userId, currentCount);
-                console.log(`User ${userId} message count: ${currentCount}/10`);
+                const trialStart = firstMessageDate.get(userId);
+                const isOverTrial = (Date.now() - trialStart) > TRIAL_DURATION;
 
-                if (currentCount === 10) {
-                    // Notify on the last free message
+                if (isOverTrial) {
+                    console.log(`User ${userId} trial expired. Blocking message.`);
+                    ctx.reply('❌ Ваш пробный период (3 дня) завершен.');
                     await sendInvoice(ctx, userId);
+                    return; // STOP HERE
                 }
             }
 
