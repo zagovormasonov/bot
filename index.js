@@ -1,8 +1,9 @@
+require('dotenv').config();
 const { Telegraf } = require('telegraf');
 
-const BOT_TOKEN = '8786655133:AAHEdr_fA3vK9YRlI2VdiQI_wxjvPDyMPJA';
-const CHAT_ADMIN = 7872761728;
-const PAYMENT_ADMIN = 337932167;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CHAT_ADMIN = Number(process.env.CHAT_ADMIN);
+const PAYMENT_ADMIN = Number(process.env.PAYMENT_ADMIN);
 
 const bot = new Telegraf(BOT_TOKEN);
 
