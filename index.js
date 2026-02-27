@@ -1,20 +1,48 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
+const fs = require('fs');
+const path = require('path');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ADMIN = Number(process.env.CHAT_ADMIN);
 const PAYMENT_ADMIN = Number(process.env.PAYMENT_ADMIN);
+
+const DATA_FILE = path.join(__dirname, 'data.json');
 
 const bot = new Telegraf(BOT_TOKEN);
 
 // messageMap: admin_side_msg_id -> { user_id, user_side_msg_id }
 const messageMap = new Map();
 
-// firstMessageDate: user_id -> timestamp (Date.now())
-const firstMessageDate = new Map();
+// State to persist
+let state = {
+    firstMessageDate: {}, // user_id -> timestamp
+    premiumUsers: {}      // user_id -> boolean
+};
 
-// premiumUsers: user_id -> boolean
-const premiumUsers = new Map();
+// Load data from file
+function loadData() {
+    try {
+        if (fs.existsSync(DATA_FILE)) {
+            const fileData = fs.readFileSync(DATA_FILE, 'utf8');
+            state = JSON.parse(fileData);
+            console.log('Data loaded successfully');
+        }
+    } catch (e) {
+        console.error('Error loading data:', e);
+    }
+}
+
+// Save data to file
+function saveData() {
+    try {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2));
+    } catch (e) {
+        console.error('Error saving data:', e);
+    }
+}
+
+loadData();
 
 const TRIAL_DURATION = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 
@@ -68,16 +96,17 @@ bot.on('message', async (ctx) => {
     // --- LOGIC FOR USERS ---
     if (userId !== CHAT_ADMIN) {
         try {
-            const isPremium = premiumUsers.get(userId);
+            const isPremium = state.premiumUsers[userId];
 
             // --- LIMIT LOGIC (3 DAYS TRIAL) ---
             if (!isPremium) {
-                if (!firstMessageDate.has(userId)) {
-                    firstMessageDate.set(userId, Date.now());
+                if (!state.firstMessageDate[userId]) {
+                    state.firstMessageDate[userId] = Date.now();
+                    saveData();
                     console.log(`User ${userId} started trial.`);
                 }
 
-                const trialStart = firstMessageDate.get(userId);
+                const trialStart = state.firstMessageDate[userId];
                 const isOverTrial = (Date.now() - trialStart) > TRIAL_DURATION;
 
                 if (isOverTrial) {
@@ -116,7 +145,9 @@ bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
 
 bot.on('successful_payment', async (ctx) => {
     const userId = ctx.from.id;
-    premiumUsers.set(userId, true);
+    state.premiumUsers[userId] = true;
+    saveData();
+
     ctx.reply('⚡️ ПРИОРИТЕТ АКТИВИРОВАН! Лимиты сняты, теперь ваши сообщения будут доставляться администратору мгновенно.');
 
     try {
